@@ -120,9 +120,8 @@ spec:
     some-property: some-value
 ```
 
-The four filds are populated by the cert-manager webhook when the
-CertificateRequest is created and their immutability is enforced by the
-webhook.
+The four fields are populated by the cert-manager webhook when the
+CertificateRequest is created. The fields are immutable.
 
 ```yaml
 kind: CertificateRequest
@@ -137,32 +136,100 @@ spec:
     some-property: some-value
 ```
 
-|            |                                                                 |
+| Field      | Description                                                     |
 | ---------- | --------------------------------------------------------------- |
 | `uid`      | UID of the user who created the CertificateRequest              |
 | `username` | Name of the user who created the CertificateRequest             |
 | `groups`   | Group membership of the user who created the CertificateRequest |
 | `extra`    | Extra attributes of the user who created the CertificateRequest |
 
-`username`, `groups`, `uid`, and `extra`
-
-These four fields are documented in the [API reference
-documentation](/docs/reference/api-docs/#cert-manager.io/v1.CertificateRequestSpec).
+The documentation about each field is available in the [API
+reference](/docs/reference/api-docs/#cert-manager.io/v1.CertificateRequestSpec).
 
 [csr-ref]: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.21/#certificatesigningrequestspec-v1-certificates-k8s-io
 [userinfo-ref]: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.21/#userinfo-v1beta1-authentication-k8s-io
 
-> **Warning**: These fields are managed by cert-manager and must not be set
-> or modified by anyone else. When the `CertificateRequest` is created,
-> these fields will be overridden, and any request attempting to modify
-> them will be rejected.
+{{% alert title="Note" color="warning" %}}
+These four fields are managed by cert-manager and cannot be edited by anyone
+else.
+{{% /alert %}}
 
-## Approval API
+## Approval API {#approval}
 
-We introduced the Approval API in cert-manager v1.3. The approval API
-introduces two mutually-exclusive conditions for CertificateRequests:
-`Approved` and `Denied`. This API gates CertificateRequests from being
-signed by its signer.
+> Introduced in cert-manager 1.3
+
+The approval API is a way to approve or deny the issuance of certificates. Up to
+cert-manager 1.3, you had no way to control which certificates could be issued.
+
+### Enable the approval API {#enable-approval-api}
+
+The default behavior in 1.3 and above is still to approve everything. If you
+would like to enable the approval API, you will need to add the following flag
+to your cert-manager-controller pod:
+
+```bash
+--controllers='*,-certificaterequests-approver'
+```
+
+If you are using Helm, you can add the following flag to your `helm install`
+incantation:
+
+```sh
+--set extraArgs="{--controllers=*,-certificaterequests-approver}"
+```
+
+Or set it in `values.yaml`:
+
+```yaml
+extraArgs:
+  - --controllers=*,-certificaterequests-approver
+```
+
+{{% pageinfo color="info" %}}
+
+The flag `--controllers=*,-certificaterequests-approver` prevents cert-manager
+from starting its allow-all built-in approval controller.
+
+{{% /pageinfo %}}
+
+When the approval API is enabled, you will need to have something approving the
+CertificateRequests:
+
+- The [`kubectl
+  cert-manager`](https://cert-manager.io/docs/usage/kubectl-plugin/) plugin can
+  manually approve or deny a CertificateRequest:
+
+  ```sh
+  kubectl cert-manager approve cert-request-1
+  kubectl cert-manager deny cert-request-1
+  ```
+
+- The [`policy-approver`](https://github.com/cert-manager/policy-approver)
+  controller can approve CertificateRequests based on policies you can configure
+  using the
+  [`CertificateRequestPolicy`](https://github.com/cert-manager/policy-approver)
+  CRD:
+
+  ```yaml
+  apiVersion: policy.cert-manager.io/v1alpha1
+  kind: CertificateRequestPolicy
+  spec:
+    maxDuration: "720h" # 30 days
+    allowedDNSNames:
+      - "*.minio.example.com"
+    allowedIsCA: false
+  ```
+
+- Or you can write your own custom approver.
+
+### The `Approved` and `Denied` conditions and approvers
+
+The approval API is made of two mutually exclusive conditions that can be set on
+the CertificateRequests status: `Approved` and `Denied`. When the approval API
+is enabled, a CertificateRequest must have the `Approved` condition before a
+signer (such as the ACME issuer) can issue the certificate.
+
+{{% pageinfo color="info" %}}
 
 As part of the approval API, we decided to make use of the term "signer"
 instead of "issuer" as a way to come closer to the terms used in the
@@ -180,17 +247,18 @@ signer. By "issuer" we refer to both external issuers (such as
 [aws-pca-issuer](https://github.com/jniebuhr/aws-pca-issuer)) and internal
 issuers (such as the ACME issuer embedded into cert-manager).
 
-The approval API kicks in right before the signer (e.g., the ACME issuer)
-gets to sign the X.509 CSR contained in a CertificateRequest. We call
-"approver" the Kubernetes controller that takes care of setting the
-`Approved` and `Denied` conditions. conditions.
+{{% /pageinfo %}}
+
+The approval API kicks in right before the signer (e.g., the ACME issuer) signs
+the X.509 CSR contained in a CertificateRequest. We call "approver" the
+Kubernetes controller that takes care of setting the `Approved` and `Denied`
+conditions.
 
 The following diagram shows the two possible scenarios. Note that in both
 cases, the issuer is still responsible for setting the `Ready` condition
 (either to `True` or to `False`):
 
 ```text
-
  APPROVAL SCENARIO                                               DENIAL SCENARIO
  +------------------------------+        |      +------------------------------+
  | kind: CertificateRequest     |        |      | kind: CertificateRequest     |
@@ -256,43 +324,78 @@ spec:
     name: example-selfsigned-issuer
 ```
 
-#### Embedded default approver
-
-cert-manager comes with a default approver.
-
-The consistency of the approval API is guarenteed by the admission webhook.
-
--
-- A signer will sign a managed CertificateRequest with an Approved
-  condition.
-- A signer will never sign a managed CertificateRequest with a Denied condition
-
-- The conditions `Approved` or `Denied` are terminal: they cannot be
-  modified or changed once set.
-
-|            |                                                                           |
-| ---------- | ------------------------------------------------------------------------- |
-|            | A signer should not sign a managed CertificateRequest without an Approved |
-| condition. |
-
 ### RBAC requirements for the Approval API
 
-Let us imagine that we want to build an approver that uses OPA (Open Policy
-Agent). Our approver takes the form of a Kubernetes controller maned
-`opa-approver-controller` that watches the CertificateRequest objects. For
-every CertificateRequest, our approver asks the OPA engine whether the
-CertificateRequest should be accepted or not:
+#### RBAC required for the built-in allow-all approver
 
-- If OPA returns true, the approver adds the `Approved=True` condition to the
-  CertificateRequest;
-- If OPA returns false, the approver adds the `Denied=True` condition to the
-  CertificateRequest.
-  By default, our approver does not have the permission to add the `Approved=True`
-  and `Denied=True` conditions. In order to allow it to add these conditions, we
-  use a custom RBAC syntax that cert-manager knows about. Let us imagine that our
-  approver needs to approve CertificateRequests that are targeting the internal
-  ACME issuer as well as the external issuer for [AWS
-  PrivateCA](https://github.com/jniebuhr/aws-pca-issuer):
+If you haven't enabled the approval API and want all CertificateRequests to be
+approved by default, you will need to add RBAC rules so that the built-in
+approver can set `Approved` and `Denied` on CertificateRequests.
+
+If you are using the Helm chart, you don't have to do anything: the built-in
+issuer types already have the correct RBAC roles.
+
+If you are using an external issuer, you will need to add an RBAC role bound to
+the service account used by the cert-manager-controller. We need to let the
+built-in allow-all approver to set `Approved` and `Denied` on the
+CertificateRequests that are referencing this issuer's type.
+
+For example, with
+[google-cas-issuer](https://github.com/jetstack/google-cas-issuer):
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cert-manager-controller-approve:google-cas-issuer # edit
+rules:
+  - apiGroups:
+      - cert-manager.io
+    resources:
+      - signers
+    verbs:
+      - approve
+    resourceNames:
+      - googlecasissuers.cas-issuer.jetstack.io/*
+      - googlecasclusterissuers.cas-issuer.jetstack.io/*
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cert-manager-controller-approve:google-cas-issuer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cert-manager-controller-approve:google-cas-issuer
+subjects:
+  - kind: ServiceAccount
+    name: cert-manager
+    namespace: cert-manager
+```
+
+{{% pageinfo color="info" %}}
+The syntax for `googlecasissuers.cas-issuer.jetstack.io/*` is detailed [here](#approval-api-rbac-syntax).
+{{% /pageinfo %}}
+
+{{% pageinfo color="info" %}}
+The "resource type"
+[corresponds to](https://kubernetes.io/docs/reference/using-api/api-concepts/#standard-api-terminology)
+the lower-case and plural version of the "kind" field.
+{{% /pageinfo %}}
+
+[subject]: https://kubernetes.io/docs/reference/access-authn-authz/rbac/#referring-to-subjects
+
+#### RBAC required for custom approvers
+
+When building your own approver controller, you will need to add RBAC roles so
+that your approver can set the `Approved=True` and `Denied=True` conditions to
+the CertificateRequests that are referencing either built-in types or external
+issuer types (such as the
+[`GoogleCASIssuer`](https://github.com/jetstack/google-cas-issuer) or the
+[`AWSPCAIssuer`](https://github.com/jniebuhr/aws-pca-issuer) type).
+
+Let us imagine that our approver needs to approve CertificateRequests that are
+targeting the built-in ACME issuer as well as the `AWSPCAIssuer`:
 
 ```yaml
 apiVersion: cert-manager.io/v1
@@ -343,65 +446,74 @@ Note: the "resource type"
 [is](https://kubernetes.io/docs/reference/using-api/api-concepts/#standard-api-terminology)
 the lower-case and plural version of the "kind" field.
 
-#### Building your own approver controller
 
-By default, cert-manager will run an internal approval controller which
-will automatically approve all CertificateRequests that reference any
-internal issuer type in any namespace: `cert-manager.io/Issuer`,
-`cert-manager.io/ClusterIssuer`.
+### Syntax of the `resourceNames` field used in RBAC roles {#approval-api-rbac-syntax}
 
-To disable this default behavior, add the following argument to the
-cert-manager-controller: `--controllers=*,-certificaterequests-approver`.
-This can be achieved with helm by appending:
+When a user or controller attempts to approve or deny a CertificateRequest, the
+cert-manager webhook evaluates whether it has sufficient permissions to do so.
+These permissions are based upon the request itself, and more specifically, the
+CertificateRequest's `issuerRef` field.
 
-```bash
---set extraArgs="{--controllers='*\,-certificaterequests-approver'}"
+{{% pageinfo color="warning" %}}
+
+The verb `approve` on the resource `signer` only works with `ClusterRole`, and
+the `apiGroup` must be set to `cert-manager.io`.
+
+{{% /pageinfo %}}
+
+Let's imagine I want to use this approver with these two issuers:
+
+```yaml
+apiVersion: awspca.cert-manager.io/v1beta1
+kind: AWSPCAClusterIssuer
+metadata:
+  name: private-ca
+spec:
+  arn: arn-c1f4f80cd072
+  region: eu-west-1
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: letsencrypt
+  namespace: namespace-with-letsencrypt
+spec:
+  acme: {}
 ```
 
-Alternatively, in order for the internal approver controller to approve
-CertificateRequests that reference an external issuer, add the following
-RBAC to the cert-manager-controller Service Account. Please replace the
-given resource names with the relevant names:
+The RBAC roles to be bound to the service account of your approver is:
 
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
-metadata:
-  name: cert-manager-controller-approve:my-issuer-example-com # edit
 rules:
-  - apiGroups:
-      - cert-manager.io
-    resources:
-      - signers
-    verbs:
-      - approve
+  - apiGroups: ["cert-manager.io"]
+    resources: ["signers"]
+    verbs: ["approve"]
     resourceNames:
-      - issuers.my-issuer.example.com/* # edit
-      - clusterissuers.my-issuer.example.com/* # edit
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: cert-manager-controller-approve:my-issuer-example-com # edit
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: cert-manager-controller-approve:my-issuer-example-com # edit
-subjects:
-  - kind: ServiceAccount
-    name: cert-manager
-    namespace: cert-manager
+      # Allow this specific AWSPCAClusterIssuer issuer:
+      - "awspcaissuers.awspca.cert-manager.io/private-ca"
+      #  <-----------> <--------------------> <------------------> <-------->
+      #  resource type     resource group          signer name     issuer name
+
+      # Or if you prefer allowing any AWSPCAClusterIssuer:
+      - "awspcaissuers.awspca.cert-manager.io/*"
+
+
+      # For namespaced issuers, the syntax is similar:
+      - "issuers.cert-manager.io/namespace-with-letsencrypt.letsencrypt"
+      #  <-----> <-------------> <-------------------------> <--------->
+      #    type       group            issuer namespace      issuer name
+
+      # You can also allow any issuer type for namespaced issuers:
+      - "issuers.cert-manager.io/*"
 ```
 
-{{% pageinfo color="info" %}}
-The "resource type"
-[corresponds to](https://kubernetes.io/docs/reference/using-api/api-concepts/#standard-api-terminology)
-the lower-case and plural version of the "kind" field.
-{{% /pageinfo %}}
+If the approver does not have sufficient permissions to set the `Approved` or
+`Denied` conditions, the CertificateRequest is rejected by the cert-manager
+webhook.
 
-[subject]: https://kubernetes.io/docs/reference/access-authn-authz/rbac/#referring-to-subjects
-
-#### Reason and message of the Approval API
+### Reason and message of the Approval API
 
 The `reason` and `message` fields on the `Denied` and `Approved` condition
 are approver-specific, meaning that each approver will set their own. Here
@@ -479,66 +591,22 @@ status:
       message: Certificate request was manually denied by kubectl_cert-manager/v1.3.0
 ```
 
-### RBAC syntax for the Approval API
+### Approval API guarantees
 
-When a user or controller attempts to approve or deny a CertificateRequest,
-the cert-manager webhook will evaluate whether it has sufficient
-permissions to do so. These permissions are based upon the request itself-
-specifically the request's IssuerRef:
+The cert-manager webhook enforces the correct use of the approval API through
+two rules:
 
-```yaml
-apiGroups: ["cert-manager.io"]
-resources: ["signers"]
-verbs: ["approve"]
-resourceNames:
-  # namesapced signers
-  - "<signer-resource-name>.<signer-group>/<signer-namespace>.<signer-name>"
-  # cluster scoped signers
-  - "<signer-resource-name>.<signer-group>/<signer-name>"
-  # all signers of this resource name
-  - "<signer-resource-name>.<signer-group>/*"
-```
+1. The approver can only set `Approved` or `Denied` on CertificateRequests that
+   reference an `Issuer` or a `ClusterIssuer` (or any other external issuer) for
+   which it has the permission to approve.
+2. The signer is only\* able to sign a CertificateRequest that is marked as
+   `Approved`. If the CertificateRequest is marked as `Denied` or has no
+   approval condition altogether, the signer is expected not to sign it.
 
-An example ClusterRole that would grant the permissions to set the Approve and
-Denied conditions of CertificateRequests that reference the cluster scoped
-`myissuers` external issuer, in the group `my-example.io`, with the name `myapp`:
-
-```yaml
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: my-example-io-my-issuer-myapp-approver
-rules:
-  - apiGroups: ["cert-manager.io"]
-    resources: ["signers"]
-    verbs: ["approve"]
-    resourceNames: ["myissuers.my-example.io/myapp"]
-```
-
-If the approver does not have sufficient permissions defined above to set the
-Approved or Denied conditions, the request will be rejected by the cert-manager
-validating admission webhook.
-
-- The RBAC permissions _must_ be granted at the cluster scope
-- Namespaced signers are represented by a namespaced resource using the syntax of `<signer-resource-name>.<signer-group>/<signer-namespace>.<signer-name>`
-- Cluster scoped signers are represented using the syntax of `<signer-resource-name>.<signer-group>/<signer-name>`
-- An approver can be granted approval for all namespaces via `<signer-resource-name>.<signer-group>/*`
-- The apiGroup must _always_ be `cert-manager.io`
-- The resource must _always_ be `signers`
-- The verb must _always_ be `approve`, which grants the approver the permissions to set _both_ Approved and Denied conditions
-
-An example of signing all `myissuer` signers in all namespaces, and
-`clustermyissuers` with the name `myapp`, in the `my-example.io` group:
-
-```yaml
-resourceNames:
-  ["myissuers.my-example.io/*", "clustermyissuers.my-example.io/myapp"]
-```
-
-An example of signing `myissuer` with the name `myapp` in the namespaces `foo`
-and `bar`:
-
-```yaml
-resourceNames:
-  ["myissuers.my-example.io/foo.myapp", "myissuers.my-example.io/bar.myapp"]
-```
+\*Some issuers [do not
+support](/docs/configuration/external/#issuers-that-honour-approval) the
+approval API yet. Such approvers break the rule (2). cert-manager detects
+CertificateRequests that have been signed by an issuer that ignored the approval
+API. When it detects one, cert-manager pretends that the CertificateRequests has
+been approved. To avoid this issue, make sure to run only issuers that support
+the approval API.
