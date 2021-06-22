@@ -5,7 +5,10 @@ weight: 10
 type: "docs"
 ---
 
-## Configuring HTTP01 Ingress Provider
+cert-manager uses your existing Ingress or GatewayClass configuration in order
+to solve HTTP01 challenges.
+
+## Configuring the HTTP01 Ingress solver
 
 This page contains details on the different options available on the `Issuer`
 resource's HTTP01 challenge solver configuration. For more information on
@@ -155,3 +158,35 @@ The added labels and annotations will merge on top of the cert-manager defaults,
 overriding entries with the same key.
 
 No other fields of the ingress can be edited.
+
+## Configuring the HTTP01 Gateway API solver
+
+{{% pageinfo color="info" %}}
+
+📌  This feature requires the installation of the Gateway API CRDs. This feature
+is experimental and requires a flag to be passed to the cert-manager controller:
+
+
+```bash
+cert-manager-controller --feature-gates=ExperimentalGatewayAPI=true
+```
+
+With Helm, you can enable the experimental feature using:
+
+```bash
+helm install cert-manager jetstack/cert-manager \
+  --set featureGates="ExperimentalGatewayAPI=true"
+```
+
+{{% /pageinfo %}}
+
+Gateway API compatibility:
+
+| Version | Compatibility |
+|---------|---------------|
+| v0.1.0  | ✅             |
+| v0.2.0  | ✅             |
+| v0.3.0  | ✅             |
+
+If you would like to disable this feature entirely, you can remove the RBAC
+rules that allow cert-manager to access the Gateway API objects.
