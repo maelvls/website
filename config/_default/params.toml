@@ -17,26 +17,19 @@
 #           - Past/archived releases change to "v#.#-docs",
 #             where # is the MAJOR and MINOR semantic version values
 
-# Latest version
-################
-# Set to "docs" path
+unreleased = false
+deprecated = true
+version = "v1.7"
+
+[[versions]]
+version = "v1.8"
+ghbranchname = "release-next"
+url = "https://release-next.cert-manager.xyz/docs/"
 
 [[versions]]
 version = "v1.7"
 ghbranchname = "release-1.7"
 url = "https://release-1-7.cert-manager.xyz/docs/"
-
-# 'Next' version
-################
-
-[[versions]]
-version = "v1.8"
-ghbranchname = "release-1.8"
-url = "https://release-1-8.cert-manager.xyz/docs/"
-
-# Archived versions
-###################
-# Use format `v0.#-docs` for past version's dirpath
 
 [[versions]]
 version = "v1.6"
