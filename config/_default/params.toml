@@ -21,6 +21,8 @@ unreleased = true
 deprecated = false
 version = "v1.8"
 
+latestVersionUrl = "https://cert-manager.io/docs/"
+
 [[versions]]
 version = "v1.8"
 ghbranchname = "release-next"
