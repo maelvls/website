@@ -17,6 +17,10 @@
 #           - Past/archived releases change to "v#.#-docs",
 #             where # is the MAJOR and MINOR semantic version values
 
+unreleased = false
+deprecated = true
+version = "v1.5"
+
 [[versions]]
 version = "v1.8"
 ghbranchname = "release-next"
