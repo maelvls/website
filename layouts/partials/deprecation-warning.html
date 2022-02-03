@@ -1,0 +1,28 @@
+{{ if (.Site.Param "deprecated") }}
+<section id="deprecation-warning">
+    <div class="content deprecation-warning pageinfo">
+        <h3>
+            You are viewing documentation for cert-manager version {{ .Param "version" }}
+        </h3>
+        <p> The cert-manager {{ .Param "version" }} documentation is no longer
+            actively maintained. The version you are currently viewing is a static
+            snapshot. For up-to-date documentation, see the
+            <a href="{{ site.Params.currentUrl }}">latest version</a>.
+        </p>
+    </div>
+</section>
+{{ end }}
+
+{{ if (.Site.Param "unreleased") }}
+<section id="deprecation-warning">
+    <div class="content deprecation-warning pageinfo">
+        <h3>
+            You are viewing the documentation for an alpha or beta version of cert-manager.
+        </h3>
+        The cert-manager {{ .Param "version" }} documentation corresponds
+        to a version of cert-manager that hasn't been released yet.
+        To see the documentation for the latest version instead, see the
+        <a href="{{ site.Params.currentUrl }}">latest version</a>.
+    </div>
+</section>
+{{ end }}
