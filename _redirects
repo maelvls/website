@@ -80,3 +80,5 @@ https://docs.cert-manager.io/* https://cert-manager.io/docs/:splat 302!
 
 # These rules handle page renames
 https://cert-manager.io/docs/faq/kubed/* https://cert-manager.io/docs/faq/sync-secrets/
+
+https://release-next.cert-manager.xyz https://cert-manager.xyz 301!
